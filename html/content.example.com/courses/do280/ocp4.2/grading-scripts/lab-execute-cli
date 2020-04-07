@@ -1,0 +1,78 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-execute-cli - lab script for DO280-OCP4
+#                          execute-cli Guided Exercise
+#
+# SYNOPSIS
+#     lab-execute-cli {start|finish}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Wed Sep 13 2019 Fernando Lozano <flozano@redhat.com>
+#   - Changes for dedicated AWS cluster
+#   * Wed May 14 2019 Christopher Caillouet <ccaillou@redhat.com>
+#   - initial creation
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start finish)
+
+# Change these variables to match your exercise
+this='execute-cli'
+title='Guided Exercise: Configuring Resources with the CLI'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  #XXX not needed anymore for standard images from Red Hat
+  #print_line ' Checking contents from the services VM'
+  #ocp4_verify_prereq_images 'rhscl/httpd-24-rhel7:2.4-93'
+  ocp4_fail_if_project_exists "${this}"
+  ocp4_exit_on_failure
+
+  ocp4_print_setup_header
+
+  print_line " Preparing the student's workstation:"
+  ocp4_install_oc
+  ocp4_grab_lab_files 'no-solution'
+  ocp4_delete_all_idp
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+  ocp4_delete_project "${this}"
+  ocp4_cleanup_lab_files 'no-solution'
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

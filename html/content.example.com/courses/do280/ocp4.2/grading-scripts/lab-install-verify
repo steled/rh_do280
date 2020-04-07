@@ -1,0 +1,73 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-install-verify - Install verify script for DO280-OCP4 ch02s06
+#                  Verifying the Installation
+#
+# SYNOPSIS
+#     lab-install-verify {start|finish}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the
+#
+# CHANGELOG
+#   * Wed Dec 18 2019 Michael Jarrett <mjarrett@redhat.com>
+#   - updated start and finish function for ocp4.2 development
+#   * Fri May 03 2019 Fernando Lozano <flozano@redhat.com>
+#   - small fixes
+#   * Tue Apr 23 2019 Iván Chavero <ichavero@redhat.com>
+#   - Initial setup
+#   * Fri Apr 05 2019 Fernando Lozano <flozano@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+
+declare -a valid_commands=(start finish)
+
+this='install-verify'
+title='GE: Verifying the Installation'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+
+function lab_start {
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+  ocp4_fail_if_project_exists "${this}"
+  ocp4_exit_on_failure
+  ocp4_print_setup_header
+  print_line " Preparing the student's workstation:"
+  ocp4_install_oc
+  ocp4_grab_lab_files 'no-solution'
+  ocp4_delete_all_idp
+  ocp4_print_setup_footer
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+  ocp4_login_as_admin
+  ocp4_delete_project "${this}"
+  ocp4_cleanup_lab_files 'no-solution'
+  ocp4_print_cleanup_footer
+}
+
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

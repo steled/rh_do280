@@ -1,0 +1,246 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-install-review - lab script for DO280-OCP4 ch02s09 lab:
+#                          Creating a Cluster
+#
+# SYNOPSIS
+#     lab-install-review {start|grade|finish}
+#
+#        start  - prepare the system for starting the lab
+#        grade  - evaluates the student work
+#        finish - perform post-lab finish and cleanup
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start, grade, or finish for
+#     the Lab: Creating a Cluster
+#
+# CHANGELOG
+#   * Fri Apr 26 2019 Fernando Lozano <flozano@redhat.com>
+#   - Fixes to file names and title
+#   * Fri Apr 13 2019 Ivan Chavero <ichavero@redhat.com>
+#   - Initial setup
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# This defines which subcommands are supported (start, grade, etc.).
+# Usually GEs do not have a grade verb
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(start grade finish)
+
+# Change these variables to match your exercise
+this='install-review'
+title='Lab: Creating a Cluster'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+  
+  ocp4_print_prereq_header
+  
+  # This Lab provides only partial installation prerequisites for students
+  ocp4_install_oc
+
+  ocp4_is_cluster_up
+
+  print_line ' Checking contents from the services VM'
+  #XXX do I have image streams for 'ubi7/php-72' ?
+  ocp4_verify_prereq_images 'rhscl/php-72-rhel7:1-20'
+  ocp4_verify_prereq_git_repos 'php-helloworld'
+
+  # avoid conflicts with left overs from previous exeercises
+  ocp4_fail_if_project_exists "${this}"
+
+  ocp4_exit_on_failure
+  ocp4_print_setup_header
+
+  print_line ' Configuring the workstation VM'
+
+  ocp4_create_downloads_folder
+
+  # Removing installation pre-requisites installed in previous GEs.
+  # Do not want to be very explicit to not give hints to students.
+
+  ocp4_pad "Clean the Downloads folder"
+  if rm -rf /home/student/Downloads/*
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  if which aws
+  then
+    ocp4_pad "Clean AWS stuff from workstation"
+    if rm -rf $( which aws ) && rm -rf /home/student/.aws
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  if which openshift-install
+  then
+    ocp4_pad "Clean OpenShift installer stuff from workstation"
+    if rm -rf $( which openshift-install )
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  if ! rpm -q python-boto
+  then
+    ocp4_pad "Install pre-requisite packages"
+    if yum -y install python-boto
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  # Do not need to erase the ssh key, pull secret, nor aws credentials because:
+  # 1. Downloads was erased
+  # 2. These are baked in the installer configuration file
+
+  ocp4_grab_lab_files 
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_grade {
+
+  ocp4_print_grade_header
+
+  ocp4_pad 'The AWS CLI is available'
+  if which aws
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad 'The OpenShift installer is available'
+  if which openshift-install
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  #XXX not sure about this test, because this one is provided for the student
+  ocp4_pad 'The OpenShift client is available'
+  if which oc
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  local install_config='/home/student/install-review/install-config.yaml'
+
+  ocp4_pad 'The installer configuration exists at the work folder'
+  if [ -r "${install_config}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad 'The installer configuration has the correct api version'
+  local api_name=$(yq r "${install_config}" apiVersion)
+  if [ "${api_name}" = "v1beta4" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad 'The installer configuration has the correct AWS region'
+  local aws_region=$(yq r "${install_config}" platform.aws.region)
+  if [ "${aws_region}" = "us-east-1" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_login_as_admin
+
+  ocp4_pad "The OpenShift project '${this}' exists"
+  if oc get project "${this}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_exit_on_failure
+
+  ocp4_pad "The 'test' build has no errors"
+  if ocp4_is_latest_build_successful "${this}" 'test'
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "The 'test' pod is ready and running"
+  if ocp4_is_pod_ready_and_running "${this}" 'test'
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "The 'test' service is exposed by a route"
+  if oc get route test -n "${this}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  local route=$(oc get route test -n "${this}" -o jsonpath='{.spec.host}')
+  ocp4_pad "The 'test' route returns the expected output"
+  if curl -s "http://${route}" | grep 'php version'
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_grade_footer
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_cleanup_lab_files
+
+  ocp4_login_as_admin
+  ocp4_delete_project "${this}"
+
+  ocp4_print_cleanup_footer
+}
+
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

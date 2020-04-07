@@ -1,0 +1,40 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+ <head>
+  <title>Index of /courses/do280/ocp4.2/materials/labs</title>
+ </head>
+ <body>
+<h1>Index of /courses/do280/ocp4.2/materials/labs</h1>
+  <table>
+   <tr><th valign="top"><img src="/icons/blank.gif" alt="[ICO]"></th><th><a href="?C=N;O=A">Name</a></th><th><a href="?C=M;O=A">Last modified</a></th><th><a href="?C=S;O=A">Size</a></th><th><a href="?C=D;O=A">Description</a></th></tr>
+   <tr><th colspan="5"><hr></th></tr>
+<tr><td valign="top"><img src="/icons/back.gif" alt="[PARENTDIR]"></td><td><a href="/courses/do280/ocp4.2/materials/">Parent Directory</a>       </td><td>&nbsp;</td><td align="right">  - </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="install-verify.tgz">install-verify.tgz</a>     </td><td align="right">2020-03-25 17:43  </td><td align="right"> 11K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="install-create.tgz">install-create.tgz</a>     </td><td align="right">2020-03-25 17:43  </td><td align="right">2.0K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="install-review.tgz">install-review.tgz</a>     </td><td align="right">2020-03-25 17:43  </td><td align="right">1.8K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="comprehensive-review.tgz">comprehensive-review..&gt;</a></td><td align="right">2020-03-25 17:43  </td><td align="right">1.7K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="network-review.tgz">network-review.tgz</a>     </td><td align="right">2020-03-25 17:43  </td><td align="right">1.5K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="monitor-apps.tgz">monitor-apps.tgz</a>       </td><td align="right">2020-03-25 17:43  </td><td align="right">1.4K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="network-ingress.tgz">network-ingress.tgz</a>    </td><td align="right">2020-03-25 17:43  </td><td align="right">1.4K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="network-sdn.tgz">network-sdn.tgz</a>        </td><td align="right">2020-03-25 17:43  </td><td align="right">1.3K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="install-prepare.tgz">install-prepare.tgz</a>    </td><td align="right">2020-03-25 17:43  </td><td align="right">1.3K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="schedule-scale.tgz">schedule-scale.tgz</a>     </td><td align="right">2020-03-25 17:43  </td><td align="right">1.2K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="monitor-alerts.tgz">monitor-alerts.tgz</a>     </td><td align="right">2020-03-25 17:43  </td><td align="right">1.1K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="monitor-review.tgz">monitor-review.tgz</a>     </td><td align="right">2020-03-25 17:43  </td><td align="right">913 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="scale-automatic.tgz">scale-automatic.tgz</a>    </td><td align="right">2020-03-25 17:43  </td><td align="right">867 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="execute-troubleshoot.tgz">execute-troubleshoot..&gt;</a></td><td align="right">2020-03-25 17:43  </td><td align="right">845 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="execute-review.tgz">execute-review.tgz</a>     </td><td align="right">2020-03-25 17:43  </td><td align="right">668 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="monitor-metrics.tgz">monitor-metrics.tgz</a>    </td><td align="right">2020-03-25 17:43  </td><td align="right">661 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="schedule-pods.tgz">schedule-pods.tgz</a>      </td><td align="right">2020-03-25 17:43  </td><td align="right">607 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="schedule-limit.tgz">schedule-limit.tgz</a>     </td><td align="right">2020-03-25 17:43  </td><td align="right">599 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="console-workloads.tgz">console-workloads.tgz</a>  </td><td align="right">2020-03-25 17:43  </td><td align="right">557 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="console-review.tgz">console-review.tgz</a>     </td><td align="right">2020-03-25 17:43  </td><td align="right">535 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="execute-cli.tgz">execute-cli.tgz</a>        </td><td align="right">2020-03-25 17:43  </td><td align="right">510 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="console-metrics.tgz">console-metrics.tgz</a>    </td><td align="right">2020-03-25 17:43  </td><td align="right">498 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="auth-provider.tgz">auth-provider.tgz</a>      </td><td align="right">2020-03-25 17:43  </td><td align="right">293 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="auth-review.tgz">auth-review.tgz</a>        </td><td align="right">2020-03-25 17:43  </td><td align="right">248 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="example.tgz">example.tgz</a>            </td><td align="right">2020-03-25 17:43  </td><td align="right">225 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="schedule-review.tgz">schedule-review.tgz</a>    </td><td align="right">2020-03-25 17:43  </td><td align="right">161 </td><td>&nbsp;</td></tr>
+   <tr><th colspan="5"><hr></th></tr>
+</table>
+</body></html>

@@ -1,0 +1,197 @@
+#!/usr/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-auth-review - lab script for DO280-OCP4 configuring identity provider Lab
+#                          
+#
+# SYNOPSIS
+#     lab-auth-review {start|finish|grade}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Mon Dec 16 2019 Michael Jarrett <mjarrett@redhat.com>
+#   - updated grade check for IDP and secret
+#   * Tue Nov 5 2019 Michael Jarrett <mjarrett@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/root/bin
+declare -a valid_commands=(start grade finish)
+
+# Change these variables to match your exercise
+this='auth-review'
+title='Lab: Configuring Identity Providers'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+  ocp4_fail_if_project_exists "${this}"
+  ocp4_exit_on_failure
+  ocp4_print_setup_header
+  print_line " Preparing the student's workstation:"
+  ocp4_install_oc
+  ocp4_grab_lab_files
+  ocp4_delete_all_idp
+  if oc get secret 'localusers' -n openshift-config -o name
+  then
+    pad2 "Delete localusers' secret in the 'openshift-config' project"
+    if oc delete secret 'localusers' -n openshift-config
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+  ocp4_print_setup_footer
+}
+
+
+
+function lab_grade {
+  ocp4_print_grade_header
+  print_line " Verifying the information collected about the cluster:"
+  ocp4_login_as_admin
+
+  #check that IDP is localusers
+  secret='localusers'
+  data=$( oc get oauth cluster -o jsonpath="{.spec.identityProviders[?(@.type == 'HTPasswd')].name}" )
+  pad2 "IDP is named localusers"
+  if  [ $data == $secret ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  #check that the secret is localusers
+  idp='localusers'
+  data=$( oc get oauth cluster -o jsonpath="{.spec.identityProviders[?(@.name == '${idp}')].htpasswd.fileData.name}")
+  pad2 "The secret is named localusers"
+  if  [ $data == $idp ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  #checking users in secret
+  pad2 "Verifying user from secret: admin"
+  if oc get secret localusers -n openshift-config -o jsonpath="{.data.htpasswd}" | base64 -d  |grep admin
+  then
+    print_PASS
+  else
+   print_FAIL
+  fi
+
+  #checking users in secret
+  pad2 "Verifying user from secret: developer"
+  if oc get secret localusers -n openshift-config -o jsonpath="{.data.htpasswd}" | base64 -d  |grep developer
+  then
+    print_PASS
+  else
+   print_FAIL
+  fi
+
+  #checking users in secret
+  pad2 "Verifying user from secret: leader"
+  if oc get secret localusers -n openshift-config -o jsonpath="{.data.htpasswd}" | base64 -d  |grep leader
+  then
+    print_PASS
+  else
+   print_FAIL
+  fi
+
+  #checking users in secret
+  pad2 "Analyst has been deleted from the secret"
+  oc get secret localusers -n openshift-config -o jsonpath="{.data.htpasswd}" | base64 -d  |grep analyst
+  if [ $? -ne 0 ];then
+    print_PASS
+  else
+   print_FAIL
+  fi
+
+  #check for admin login
+  user1='admin'
+  pad2 "Admin can log in to the cluster"
+  if  oc login -u ${user1} -p ${RHT_OCP4_USER_PASSWD}
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi        
+
+
+  #check for developer login
+  user2='developer'
+  pad2 "Developer can log in to the cluster"
+  if  oc login -u ${user2} -p ${RHT_OCP4_USER_PASSWD}
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  #check for developer login
+  user3='leader'
+  pad2 "Leader can log in to the cluster"
+  if  oc login -u ${user3} -p ${RHT_OCP4_USER_PASSWD}
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  #check for operator login
+  user4='operator'
+  pad2 "Operator has the correct password"
+  if  oc login -u ${user4} -p ${RHT_OCP4_USER_PASSWD}
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  #check to see if the analyst user was deleted
+  user4='analyst'
+  pad2 "Verifying '${user4}' was deleted"
+  oc login -u ${user4} -p ${RHT_OCP4_USER_PASSWD}
+  if  [ $? -ne 0 ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi    
+  ocp4_print_grade_footer
+}
+
+
+
+
+function lab_finish {
+  ocp4_print_cleanup_header
+  ocp4_login_as_admin
+  ocp4_delete_project "${this}"
+  ocp4_cleanup_lab_files
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

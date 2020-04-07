@@ -1,0 +1,510 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-comprehensive-review - lab script for DO280-OCP4
+#                          Comprehensive Review
+#
+# SYNOPSIS
+#     lab-comprehensive-review {start|finish}
+#
+#        start   - prepare the system for starting the lab
+#        finish  - perform post-lab finish
+#        grading - perform grading for the lab
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Mon Dec 30 2019 Iván Chavero <ichavero@redhat.com>
+#   - initial creation
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start finish grade)
+
+# Change these variables to match your exercise
+this='comprehensive-review'
+title='Lab: Comprehensive Review'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_fail_if_project_exists "${this}"
+  ocp4_exit_on_failure
+
+  ocp4_print_setup_header
+
+  ocp4_delete_all_idp
+
+  # The cluster-admin role binding can exist, even if the user does not...
+  oc adm policy remove-cluster-role-from-user cluster-admin admin
+
+  ocp4_delete_user_htpasswd 'admin' 'leader' 'developer' 'qa-engineer'
+  ocp4_delete_user 'admin' 'leader' 'developer' 'qa-engineer'
+  ocp4_delete_group 'developers' 'qa' 'leaders'
+
+  pad2 "Removing cluster-admin role from admin"
+  CORRECT_ROLE=""
+  for BINDING in $(oc get clusterrolebindings -o name | grep cluster-admin)
+  do
+    if [ $(oc get ${BINDING} -o jsonpath='{.subjects[0].name}') == "admin" ]
+    then
+      CORRECT_ROLE="${BINDING}"
+      break
+    fi
+  done
+  if [ "${CORRECT_ROLE}" == "" ]
+  then
+    print_SUCCESS
+  else
+    if oc delete ${BINDING}
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+
+  ocp4_install_oc
+  ocp4_grab_lab_files no_solution
+
+#################################################################
+#
+# IC: Removed for now due lack of time for polishing tasks
+#
+##################################################################
+
+#  print_line ' Configuring Certificates:'
+#  pad ' · Setting environment variable in cert. configuration file'
+#  if RHT_OCP4_WILDCARD_DOMAIN=${RHT_OCP4_WILDCARD_DOMAIN} \
+#      RHT_OCP4_BASE_DOMAIN=${RHT_OCP4_WILDCARD_DOMAIN#apps.} \
+#      envsubst < /home/student/${RHT_COURSE^^}/labs/${this}/tls/training.template >> /home/student/${RHT_COURSE^^}/labs/${this}/tls/training.ext; then
+#    rm -f /home/student/${RHT_COURSE^^}/labs/${this}/tls/training.template
+#    print_SUCCESS
+#  else
+#    print_FAIL
+#  fi
+#
+#  pad ' · Generating the CA key'
+#  if openssl genrsa \
+#      -out /home/student/${RHT_COURSE^^}/labs/${this}/tls/compreview-CA.key 2048; then
+#    print_SUCCESS
+#  else
+#    print_FAIL
+#    exit 1
+#  fi
+#
+#  pad ' · Generating CA certificate'
+#  if openssl req \
+#      -x509 -new -nodes -sha256 -days 1825 \
+#      -key /home/student/${RHT_COURSE^^}/labs/${this}/tls/compreview-CA.key \
+#      -subj "/C=US/ST=North Carolina/L=Raleigh/O=Red Hat/CN=${RHT_OCP4_WILDCARD_DOMAIN#apps.}" \
+#      -out /home/student/${RHT_COURSE^^}/labs/${this}/tls/compreview-CA.pem; then
+#    print_SUCCESS
+#  else
+#    print_FAIL
+#  fi
+#
+#  pad ' · Updating privileges on certs directory'
+#  if chown -R student:student /home/student/${RHT_COURSE^^}/labs/${this}/tls/; then
+#    print_SUCCESS
+#  else
+#    print_FAIL
+#  fi
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_grade {
+  ocp4_print_grade_header
+
+  ocp4_login_as_admin
+
+  #Verify that the hello-world-nginx  application exists
+  print_line " Cluster Smoke Test Configuration"
+  pad2 "smoke test application is present"
+  if ! oc project comprehensive-review
+  then
+    print_FAIL
+    print_line "     ERROR: Smoke test app not in the correct project"
+  else
+    if ! oc get dc hello-world-nginx; then
+      print_FAIL
+    else
+      if ! oc get routes hello-world-nginx; then
+        print_FAIL
+      else
+        if curl "$(oc get routes hello-world-nginx -o jsonpath='{.spec.host}')"
+        then
+          print_PASS
+        else
+          print_FAIL
+        fi
+      fi
+    fi
+  fi
+
+  #Verify the 'cluster-users' idp exists
+  print_line " Identity Provider Configuration and Users"
+  pad2 "The 'cluster-users' identity provider exists"
+  if [[ $(oc get oauth cluster -o json | jq '.spec.identityProviders[] | select(.name=="cluster-users") | [.] | length') == 1 ]]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  #Verify the existence of the compreview-users secret
+  pad2 "The 'compreview-users' secret is created"
+  if ! oc get secret compreview-users -n openshift-config
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify the idp is setup correctly
+  pad2 "The identity provider uses the 'compreview-users' secret"
+  if [[ $(oc get oauth cluster -o json | jq '.spec.identityProviders[] | select(.name=="cluster-users") | .htpasswd.fileData.name == "compreview-users"') == 'true' ]]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  #Verify admin has cluster-admin privileges
+  #FIXME: We need to implement this in a way that allows the user to create a custom rolebinding instead
+  #       of just using the oc adm policy method. Alternatively, we could use who-can to see if they have
+  #       the ability to do the required functions
+  pad2 "admin user has cluster-admin rolebinding"
+  local CORRECT_ROLE="false"
+  for BINDING in $(oc get clusterrolebindings -o name | grep cluster-admin)
+  do
+    if [ $(oc get ${BINDING} -o jsonpath='{.subjects[0].name}') == "admin" ]
+    then
+      CORRECT_ROLE="true"
+      break
+    fi
+  done
+
+  if [ "${CORRECT_ROLE}" == "true" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+
+  #Verify that required groups exist
+  print_line " User Groups and Roles"
+  pad2 "The 'leaders', 'qa', and 'developers' groups exist"
+  if oc get group developers && oc get group leaders && oc get group qa
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  #Verify that the developer user is in the correct group
+  pad2 "The 'developer' user is in the correct group"
+  if ! oc get group developers -o jsonpath='{.users}' | grep -w developer
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the dev group has edit permissions in the project comprehensive-review
+  pad2 "'developers' group has correct project permissions"
+  if oc login -u developer -p "${RHT_OCP4_USER_PASSWD}" "${RHT_OCP4_MASTER_API}" && oc project comprehensive-review
+  then
+    if ! oc new-app --name=grade-httpd httpd
+    then
+      print_FAIL
+    else
+      print_PASS
+    fi
+  else
+    print_FAIL
+  fi
+  ocp4_login_as_admin
+  oc delete all -l app=grade-httpd -n comprehensive-review
+  oc delete imagestream.image.openshift.io/grade-httpd -n comprehensive-review
+
+
+  #Verify that the qa-engineer user is in the QA group
+  pad2 "'qa-engineer' user is in the correct group"
+  if ! oc get group qa -o jsonpath='{.users}' | grep -w qa-engineer
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that users in the qa group have view permissions in the project comprehensive-review
+  pad2 "'qa' group can view the 'comprehensive-review' project"
+  if oc login -u qa-engineer -p "${RHT_OCP4_USER_PASSWD}" "${RHT_OCP4_MASTER_API}"
+  then
+    if oc get all -n comprehensive-review
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+  else
+    print_FAIL
+    print_line "     'qa-engineer' could not login"
+  fi
+  ocp4_login_as_admin
+
+
+  print_line ' MySQL Database Application Configuration'
+  #Verify that the mysql application exists
+  pad2 "'mysql' database application exists"
+  if ! oc get dc mysql
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the mysql exists
+  pad2 "'mysql' secret exists"
+  if ! oc get secret mysql
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the mysql secret was used to initialize the mysql environment variables
+  pad2 "'MYSQL_ROOT_PASSWORD' is set from the 'mysql' secret"
+  if ! oc get dc/mysql -o json | jq '. | .spec.template.spec.containers[0].env[] | select(.valueFrom) | .valueFrom.secretKeyRef'
+  then
+    print_FAIL
+  else
+    data=$(oc get dc/mysql -o json | jq '. | .spec.template.spec.containers[0].env[] | select(.valueFrom) | .valueFrom.secretKeyRef')
+    key_found=$(echo "$data" | jq -r '.key')
+    name_found=$(echo "$data" | jq -r '.name')
+    if [ "$key_found" == "password" ] && [ "$name_found" == "mysql" ]
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+  fi
+
+
+  print_line ' Wordpress Application Configuration'
+  #Verify that the wordpress application exists
+  pad2 "'wordpress' application exists"
+  if ! oc get dc wordpress
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the mysql secret was used to initialize the wordpress environment variables
+  pad2 "app uses the root user password from the 'mysql' secret"
+  if ! oc get dc/wordpress -o json | jq '. | .spec.template.spec.containers[0].env[] | select(.valueFrom) | .valueFrom.secretKeyRef'
+  then
+    print_FAIL
+  else
+    data=$(oc get dc/wordpress -o json | jq '. | .spec.template.spec.containers[0].env[] | select(.valueFrom) | .valueFrom.secretKeyRef')
+    key_found=$(echo "$data" | jq -r '.key')
+    name_found=$(echo "$data" | jq -r '.name')
+    if [ "$key_found" == "password" ] && [ "$name_found" == "mysql" ]
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+  fi
+
+
+  #Verify that the famous-quotes application exists
+  print_line ' Famous Quotes App Configuration'
+  pad2 "The application exists"
+  if ! oc get dc famous-quotes
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  pad2 "node selector removed from 'dc/famous-quotes'"
+  if [ "$(oc get pods -l app=famous-quotes --no-headers | wc -l)" == "1" ]
+  then
+    status="$(oc get pods -l app=famous-quotes --no-headers | awk '{print $3}')"
+    if [ "$status" == "Running" ]
+    then
+      print_PASS
+    else
+      echo "Application pod appears to not be in a running state!"
+      echo $(oc get pods -l app=famous-quotes --no-headers)
+      print_FAIL
+    fi
+  else
+    print_FAIL
+  fi
+
+#################################################################
+# IC: Removed for now due lack of time for polishing tasks
+# # DK: Any URL under the wildcard domain will pass this test -
+# #     even if the URL/route does not exist...
+# # DK: We need to re-think this test; leaving it out for now...
+##################################################################
+#  pad2 "verify SSL access to famous quotes app"
+#  if [[ $(curl -v -I https://famous-quotes-tls.${RHT_OCP4_WILDCARD_DOMAIN} 2>&1 | grep TLS) == *"TLS handshake"* ]]
+#  then
+#    print_PASS
+#  else
+#    print_FAIL
+#  fi
+
+  print_line ' User Permission Checks'
+  #Verify the ability to create projects
+  pad2 "'developer' can not create projects"
+  if oc login -u developer -p "${RHT_OCP4_USER_PASSWD}" "${RHT_OCP4_MASTER_API}"
+  then
+    if oc new-project test-as
+    then
+      oc delete project test-as
+      print_FAIL
+    else
+      print_PASS
+    fi
+  else
+    print_FAIL
+    print_line "    cannot test; no 'developer' user"
+  fi
+  ocp4_login_as_admin
+
+  #Verify that the qa-engineer user can’t edit the wordpress deployment
+  pad2 "'qa-engineer' cannot edit 'wordpress' app resources"
+  if oc login -u qa-engineer -p "${RHT_OCP4_USER_PASSWD}" "${RHT_OCP4_MASTER_API}"
+  then
+    if oc get dc wordpress
+    then
+      if oc scale dc wordpress --replicas=3
+      then
+        print_FAIL
+        oc scale dc wordpress --replicas=1
+      else
+        print_PASS
+      fi
+    else
+      print_FAIL
+      print_line '    cannot test; no wordpress app'
+    fi
+  else
+    print_FAIL
+    print_line "     cannot test; no 'qa-engineer' user"
+  fi
+  ocp4_login_as_admin
+
+
+  #Verify that the qa-engineer user can view the mysql
+  pad2 "'qa-engineer' can view 'mysql' app resources"
+  if oc get dc mysql
+  then
+    if oc login -u qa-engineer -p "${RHT_OCP4_USER_PASSWD}" "${RHT_OCP4_MASTER_API}"
+    then
+      if ! oc get dc mysql
+      then
+        print_FAIL
+      else
+        print_PASS
+      fi
+    else
+      print_FAIL
+      print_line "     cannot test; no 'qa-engineer' user"
+    fi
+  else
+    print_FAIL
+    print_line "     cannot test; no 'mysql' app"
+  fi
+  ocp4_login_as_admin
+
+
+  #Verify that the qa-engineer user can view the wordpress deployment
+  pad2 "'qa-engineer' can view 'wordpress' app resources"
+  if oc get dc wordpress
+  then
+    if oc login -u qa-engineer -p "${RHT_OCP4_USER_PASSWD}" "${RHT_OCP4_MASTER_API}"
+    then
+      if ! oc get dc wordpress
+      then
+        print_FAIL
+      else
+        print_PASS
+      fi
+    else
+      print_FAIL
+      print_line "     cannot test; no 'qa-engineer' user"
+    fi
+  else
+    print_FAIL
+    print_line "     cannot test; no 'wordpress' app"
+  fi
+  ocp4_login_as_admin
+
+  ocp4_print_grade_footer
+
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+
+  ocp4_delete_all_idp
+  ocp4_delete_secret 'compreview-users' 'openshift-config'
+
+  ocp4_delete_user 'admin' 'leader' 'developer' 'qa-engineer'
+  ocp4_delete_group 'leaders' 'developers' 'qa'
+
+  ocp4_add_standard_users
+  ocp4_add_self_provisioing
+
+  print_line ' Project Clean-up'
+  ocp4_delete_project "${this}"
+
+  print_line ' Other Clean-up'
+  pad2 "Restoring cluster privileges"
+  if ! oc adm policy add-cluster-role-to-group \
+    --rolebinding-name self-provisioners \
+    self-provisioner system:authenticated:oauth
+   then
+    print_FAIL
+  else
+    print_SUCCESS
+  fi
+  ocp4_cleanup_lab_files no_solution
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source "/usr/local/lib/${function_lib}"
+source "/usr/local/lib/${platform_lib}"
+
+grading_main_program "$@"

@@ -1,0 +1,385 @@
+#!/usr/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-monitor-review - lab script for DO280-OCP4
+#
+# SYNOPSIS
+#     lab-monitor-review {start|grade|finish}
+#
+#        start  - prepare the system for starting the lab
+#        grade  - evaluate student work
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on a singular argument, either does start,
+#     grade, or finish for the [name of the exercise]
+#
+# CHANGELOG
+#   * Thu Dec 19 2019 Dan Kolepp <dkolepp@redhat.com>
+#   - Copy from lab-schedule-review as a starting point
+#   - Update start finish
+#   * Thu Dec 05 2019 Michael Phillips <miphilli@redhat.com>
+#   - last version of lab-schedule-review
+
+# Disables shellcheck errors related to passing arguments
+# to functions in the labtool.shlib.
+# shellcheck disable=SC2119
+true
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+
+# This defines which subcommands are supported (start, grade, etc.).
+# Usually GEs do not have a grade verb
+# Corresponding lab_COMMAND functions must be defined.
+# shellcheck disable=SC2034
+declare -a valid_commands=(start grade finish)
+
+# Change these variables to match your exercise
+this='monitor-review'
+# shellcheck disable=SC2034
+title='Lab: Troubleshooting Cluster Events and Alerts'
+
+# Do not change these variables
+# shellcheck disable=SC2034
+target='workstation'
+# shellcheck disable=SC2034
+run_as_root='true'
+
+
+# timestamp_diff <start> <end>
+#
+# where <start>,<end> are of the form: 2019-12-22T14:58:54.193499592Z
+# This is the format of a timestamp from a silence object from the 
+# silences API.
+function timestamp_diff() {
+  local start="$1"
+  local end="$2"
+
+  #Convert JavaScript Timestamp to seconds-since-epoch
+  start=$(date -d "$start" +%s)
+  end=$(date -d "$end" +%s)
+  diff=$((end-start))
+  echo "$diff"
+}
+
+
+function two_hour_expiry() {
+  local start="$1"
+  local end="$2"
+  local diff
+  diff=$(timestamp_diff "$start" "$end")
+
+  if [[ "$start" = "null" || "$end" = "null" ]]; then
+    echo "The timestamps are invalid"
+    return 1
+  fi
+
+  if [ "$diff" -lt 7100 ]; then
+    echo "Time difference is not within 100 seconds of 2 hours"
+    return 1
+  fi
+
+  if [ "$diff" -gt 7300 ]; then
+    echo "Time difference is not within 100 seconds of 2 hours"
+    return 1
+  fi
+  
+  return 0
+}
+
+
+function get_ocp4_token() {
+  local result
+  if result=$(oc whoami -t) ; then
+    echo "$result"
+  else
+    return 1
+  fi  
+}
+
+# Alert Manager (aka, am) API URL
+function get_am_api_url() {
+  echo "$(oc get route alertmanager-main \
+  -n openshift-monitoring \
+  -o jsonpath='{.spec.host}')/api/v1/"
+}
+
+# A function to perform a GET request for an OpenShift 
+# API endpoint using an OpenShift token
+function do_api_request() {
+  local api_url="$1"
+  local api_endpoint="$2"
+  # Default to a GET request
+  local http_verb=${3:-GET} 
+  local token
+
+  token="$(get_ocp4_token)"
+  local token_header="Authorization: Bearer $token"
+
+  local result
+  if result=$(curl -skL \
+       -X "$http_verb" \
+       -H "$token_header" \
+       https://"${api_url}${api_endpoint}"); then
+    echo "$result"
+  else
+    return 1
+  fi
+}
+
+
+
+function get_silences() {
+  local alert_manager_api="$1"
+  local num_active_silences
+  local temp_data
+  msg=""
+  kube_silences=""
+  
+  echo "Doing API request..." 1>&2
+  temp_data=$(do_api_request "$alert_manager_api" /silences)
+  echo "Result: $?" 1>&2
+  echo "Data: $temp_data" 1>&2
+
+  all_silences=$(echo "${temp_data}" | jq '.data[]')
+
+  if active_silences=$(echo "${all_silences}" | jq '. | select( .status.state == "active")'); then
+    num_active_silences=$(echo "$active_silences" | jq '. | length')
+    if [ -z "$num_active_silences" ]; then
+      msg="     No active silences found."
+      return 1
+    fi
+
+    temp_data=$(echo "$active_silences" | jq '. | {id:.id, start:.startsAt, end:.endsAt, alerts:.matchers[].value}')
+    kube_mem_silences=$(echo "$temp_data" | jq '. | select(.alerts == "KubeMemOvercommit")')
+    if [ -z "$kube_mem_silences" ]; then
+      msg="     Did not find an active KubeMemOvercommit silence"
+      return 1
+    fi
+
+    #Not actually grading the "expires window at the moment..."
+    echo "KubeMemOvercommit Active Silences:" "$kube_mem_silences" | jq '.' 1>&2
+    return 0
+  fi
+
+  msg="     ERR: Unable to parse API data"
+  return 1
+}
+
+
+function del_silences() {
+  local alert_manager_api="$1"
+  msg=""
+  kube_silences=""
+  
+  echo "Doing API request..." 1>&2
+  temp_data=$(do_api_request "$alert_manager_api" /silences)
+  echo "Result: $?" 1>&2
+  echo "Data: $temp_data" 1>&2
+
+  if silences=$(echo "${temp_data}" | jq '.data[] | {id:.id, start:.startsAt, end:.endsAt, alerts:.matchers[].value} '); then
+    echo "Deleting silences: $silences" 1>&2
+
+    kube_silences=$(echo "$silences" | jq '. | select(.alerts == "KubeMemOvercommit")')
+    if [ -z "$kube_silences" ]; then
+      return 0
+    fi
+
+    for sid in $(echo "$kube_silences" | jq '.id' | sort -u | cut -d '"' -f2); do
+      echo "Removing silence: $sid" 1>&2
+      if do_api_request "$alert_manager_api" "/silence/$sid" DELETE ; then
+        echo "Successfully deleted $sid" 1>&2
+      else
+        msg="Unable to delete $sid"
+        return 1
+      fi
+    done
+  fi
+
+  return 0
+}
+
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+  ocp4_fail_if_project_exists "${this}"
+
+  ocp4_exit_on_failure "It looks like you have already started this lab. To try this lab again, run 'lab ${this} finish' followed by 'lab ${this} start'."
+
+  ocp4_print_setup_header
+  ocp4_add_standard_users
+  ocp4_add_self_provisioing
+  print_line " Preparing the student's cluster:"
+  ocp4_install_oc
+  ocp4_grab_lab_files no_solution
+  # ocp4_grab_lab_files no_solution
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_grade {
+  local app_name="hello"
+  local required_cpu_request="250m"
+  local required_mem_request="256Mi"
+  local required_replicas=8
+  local actual_cpu_request
+  local actual_mem_request
+  local actual_replicas
+  local fqdn
+  local alert_manager_api
+  local temp_data
+
+  ocp4_print_grade_header
+
+  ocp4_login_as_admin
+  alert_manager_api="$(get_am_api_url)"
+  
+
+  pad2 "Project '${this}' exists"
+  if oc project ${this}; then
+    print_PASS
+  else
+    print_FAIL
+    print_line "$msg"
+  fi
+
+  fqdn=$(oc get route "${app_name}" -n "${this}" \
+        -o jsonpath='{.spec.host}')
+
+  pad2 "Application '${app_name}' exists"
+  local app_config
+  # Check to see if students created a k8s deployment
+  if [ "$(oc get deployment -l app="""${app_name}""" -o name | wc -l)" -eq 1 ]; then
+    app_config=$(oc get deployment -l app="${app_name}" -o name)
+    print_PASS
+  # Check to see if students created an OpenShift deployment config
+  elif [ "$(oc get dc -l app="""${app_name}""" -o name | wc -l)" -eq 1 ]; then
+    app_config=$(oc get dc -l app="${app_name}" -o name)
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Application '${app_name}' responds to a curl request"
+  if curl "http://${fqdn}"; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+
+  pad2 "Application '${app_name}' requests correct CPU resources"
+  actual_cpu_request=$(oc get "${app_config}" \
+  -o jsonpath='{.spec.template.spec.containers[0].resources.requests.cpu}')
+  if [ "${actual_cpu_request}" == "${required_cpu_request}" ]; then
+    print_PASS
+  else
+    echo "Failed: (required,$required_cpu_request) and (actual,$actual_cpu_request)"
+    print_FAIL
+  fi
+
+  pad2 "Application '""${app_name}""' requests correct memory resources"
+  actual_mem_request=$(oc get "${app_config}" \
+  -o jsonpath='{.spec.template.spec.containers[0].resources.requests.memory}')
+  if [ "${actual_mem_request}" == "${required_mem_request}" ]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Application '${app_name}' requests correct # of replicas"
+  actual_replicas=$(oc get "${app_config}" -o jsonpath='{.spec.replicas}')
+  if [ "${actual_replicas}" == "${required_replicas}" ]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "A single KubeMemOvercommit silence is active"
+  if get_silences "$alert_manager_api" ; then
+    if [ "$(echo "$kube_mem_silences" | jq '[.] | length')" = 1 ]; then
+      print_PASS
+    else
+      print_FAIL
+    fi
+  else
+    print_FAIL
+    # '$msg' is set by the 'get_silences' function
+    print_line "$msg"
+  fi
+
+
+  pad2 "The KubeMemOvercommit silence has 2 hour expiration"
+  # Extract timestamps from inside a pair of quotes
+  start=$(echo "$kube_mem_silences" | jq '. | .start' | cut -d '"' -f2)
+  end=$(echo "$kube_mem_silences" | jq '. | .end' | cut -d '"' -f2)
+  echo "Start TS: $start,  End TS: $end"
+  if two_hour_expiry "$start" "$end" ; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "The liveness probe endpoint is correct"
+  query="{.spec.template.spec.containers[0].livenessProbe.httpGet.path}"
+  path=$(oc get deployment hello -o jsonpath="$query")
+  echo "The liveness path is: $path"
+  if echo "$path" | grep '/health$' > /dev/null; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_grade_footer
+}
+
+
+function lab_finish {
+  local app_name="hello"
+  local required_cpu_request="250m"
+  local required_mem_request="256Mi"
+  local required_replicas=10
+  local actual_cpu_request
+  local actual_mem_request
+  local actual_replicas
+  local kube_silences
+  local fqdn
+  local alert_manager_api
+
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+  alert_manager_api="$(get_am_api_url)"
+
+  ocp4_delete_project "${this}"
+
+  pad2 "Remove KubeMemOvercommit silences"
+  if del_silences "$alert_manager_api"; then
+    print_SUCCESS
+  else
+    print_FAIL
+    print_line "$msg"
+  fi
+
+  ocp4_cleanup_lab_files no_solution
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+# shellcheck disable=SC1091,SC2154 source=labtool.do280.shlib
+source /usr/local/lib/"${function_lib}"
+# shellcheck disable=SC1091,SC2154 source=labtool.do280.shlib
+source /usr/local/lib/"${platform_lib}"
+
+grading_main_program "$@"

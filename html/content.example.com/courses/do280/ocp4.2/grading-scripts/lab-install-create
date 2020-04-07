@@ -1,0 +1,258 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-install-create - script for Guided Exercise: Creating the Cluster
+#
+# SYNOPSIS
+#     lab-install-create {start|grade|finish}
+#
+#        start   - prepare the system for starting the exercise
+#        grade  - perform post-exercise evaluation
+#        finish  - perform post-exercise cleanup
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does setup,
+#      or cleanup for the particular exercise.
+#
+# CHANGELOG
+#   * Mon Jan 06 2020 Razique Mahroua <rmahroua@redhat.com>
+#     - Peer review fixes
+#   * Thu Apr  16 2019 Fernando Lozano <flozano@redhat.com>
+#     - Refactored for the DO280-OCP4 shlib and conventions
+#   * Thu Apr  05 2019 Michael Phillips <miphilli@redhat.com>
+#     - original code
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# This defines which subcommands are supported (setup, grade, etc.).
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(start finish grade)
+
+# Initialize and set some variables
+run_as_root='true'
+target='workstation'
+this='install-create'
+title='Guided Exercise: Creating the Cluster'
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  # ocp4_pad "The aws command is available"
+  # if which aws
+  # then
+  #   print_SUCCESS
+  # else
+  #   print_FAIL
+  # fi
+
+  ocp4_pad "The openshift-install command is available"
+  if which openshift-install
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "The oc command is available"
+  if which oc
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "The SSH public key file is available"
+  if [ -r /home/student/.ssh/cluster-key.pub ]
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_exit_on_failure 'Please perform the Guided Exercise: Preparing for Installation before trying again'
+
+  ocp4_print_setup_header
+
+  ocp4_grab_lab_files
+
+  local downloads=${labs}/${this}/
+  ocp4_pad "The AWS credentials file is available"
+  if [ -r "${downloads}/aws-credentials.txt" ]
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "The OpenShift pull secrets file is available"
+  if [ -r "${downloads}/pull-secret-generic" ]
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "Clean the student user's AWS state"
+  if rm -rf /home/student/.aws
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_setup_footer
+}
+
+function ocp4_install_config_get_master_zone {
+  local return_var="$1"
+  local file="$2"
+  local aws_zone_index="$3"
+
+  local zone=$( yq r "${file}" "controlPlane.platform.aws.zones[${aws_zone_index}]" )
+  echo "*** zone: ${zone}"
+
+  eval $return_var="'${zone}'"
+}
+
+function ocp4_install_config_get_master_ami_type {
+  local return_var="$1"
+  local file="$2"
+
+  local type=$( yq r "${file}" "controlPlane.platform.aws.type" )
+  echo "*** type: ${type}"
+
+  eval $return_var="'${type}'"
+}
+
+
+function ocp4_install_config_get_worker_zone {
+  local return_var="$1"
+  local file="$2"
+  local machine_group_index="$3"
+  local aws_zone_index="$4"
+
+  local zone=$( yq r "${file}" "compute[${machine_group_index}].platform.aws.zones[${aws_zone_index}]" )
+  echo "*** zone: ${zone}"
+
+  eval $return_var="'${zone}'"
+}
+
+
+function ocp4_install_config_get_worker_ami_type {
+  local return_var="$1"
+  local file="$2"
+  local machine_group_index="$3"
+
+  local type=$( yq r "${file}" "compute[${machine_group_index}].platform.aws.type" )
+  echo "*** type: ${type}"
+
+  eval $return_var="'${type}'"
+}
+
+
+function ocp4_install_config_get_worker_replicas {
+  local return_var="$1"
+  local file="$2"
+  local machine_group_index="$3"
+
+  local replicas=$( yq r "${file}" "compute[${machine_group_index}].replicas" )
+  echo "*** replicas: ${replicas}"
+
+  eval $return_var="'${replicas}'"
+}
+
+
+function lab_grade {
+
+  ocp4_print_grade_header
+
+  print_line " Verifying the install-config.yaml file:"
+
+  ocp4_pad "Check the work folder ~/${this} exists"
+  if [ -d /home/student/${this} ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  local install_config=/home/student/${this}/install-config.yaml
+
+  ocp4_pad "Check install-config.yaml exists in the work folder"
+  if [ -r "${install_config}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  local zone='us-east-1a'
+  local type='m4.2xlarge'
+  local replicas='2'
+
+  ocp4_pad "Worker nodes use the ${zone} AWS zone"
+  ocp4_install_config_get_worker_zone 'worker_zone' "${install_config}" 0 0
+  if [ "${worker_zone}" = "${zone}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "Worker nodes use the ${type} AMI type"
+  ocp4_install_config_get_worker_ami_type 'worker_type' "${install_config}" 0 0
+  if [ "${type}" = "${worker_type}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "Worker nodes replicas set to ${replicas}"
+  ocp4_install_config_get_worker_replicas 'worker_replicas' "${install_config}" 0 0
+  if [ "${replicas}" = "${worker_replicas}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "Master nodes use the ${zone} AWS zone"
+  ocp4_install_config_get_master_zone 'master_zone' "${install_config}" 0
+  if [ "${master_zone}" = "${zone}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "Master nodes use the ${type} AMI type"
+  ocp4_install_config_get_master_ami_type 'master_type' "${install_config}" 0
+  if [ "${type}" = "${master_type}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_grade_footer
+}
+
+function lab_finish {
+  ocp4_print_cleanup_header
+
+  ocp4_cleanup_lab_files
+  ocp4_print_cleanup_footer
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

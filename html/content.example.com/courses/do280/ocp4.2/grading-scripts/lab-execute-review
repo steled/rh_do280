@@ -1,0 +1,339 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-execute-review - lab script for DO280-OCP4
+#                          executing-commands lab
+#
+# SYNOPSIS
+#     lab-execute-review {start|finish|grade}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Thu Oct 10 2019 Fernando Lozano <flozano@redhat.com
+#   - updates for ocp 4.2 and dedicated AWS cluster
+#   * Wed May 01 2019 Razique Mahroua <rmahroua@redhat.com
+#   - fixes DE19323
+#   * Fri Apr 26 2019 Razique Mahroua <rmahroua@redhat.com
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/root/bin:/sbin:/usr/local/bin
+declare -a valid_commands=(start finish grade)
+
+# Change these variables to match your exercise
+this='execute-review'
+title='Lab: Executing Commands'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_fail_if_project_exists "${this}"
+  ocp4_exit_on_failure
+
+  ocp4_print_setup_header
+
+  print_line " Preparing the student's workstation:"
+  ocp4_install_oc
+  ocp4_grab_lab_files
+  #XXX need to "fix" the ingres on solution httpd.yaml
+
+  pad2 'Generating solution files'
+  if sed -i "s/apps.example.com/${RHT_OCP4_WILDCARD_DOMAIN}/" "${solutions}/${this}/httpd.yaml"
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_grade {
+
+  ocp4_print_grade_header
+
+  print_line " Verifying the information collected about the cluster:"
+
+  ocp4_login_as_admin
+
+  local results_file="cluster-masters.txt"
+  pad2 "List of master nodes in '~/${this}/${results_file}'"
+  if oc get node -o name -l node-role.kubernetes.io/master > "/tmp/${results_file}" \
+    && cmp -s "/tmp/${results_file}" "/home/student/${this}/${results_file}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  local results_file="internal-registry-node.txt"
+  pad2 "Name of node that runs the internal registry in '~/${this}/${results_file}'"
+  #XXX not tested for more than one registry pod
+  local registry_pod=$(oc get pod -l 'docker-registry=default' -o name -n openshift-image-registry)
+  if oc get "${registry_pod}" -o jsonpath='{.spec.nodeName}{"\n"}' -n openshift-image-registry > "/tmp/${results_file}" \
+    && cmp -s "/tmp/${results_file}" "/home/student/${this}/${results_file}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  print_line " Verifying the MySQL server YAML file:"
+
+  local yaml_file="mysqld.yaml"
+  pad2 "File '~/${this}/${yaml_file}' exists"
+  if [ -r "/home/student/${this}/${yaml_file}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Deployment defines the 'MYSQL_ROOT_PASSWORD' environment variable"
+  local env_name=$(yq r -d0 "/home/student/${this}/${yaml_file}" 'spec.template.spec.containers[0].env[0].name')
+  if [ "${env_name}" = 'MYSQL_ROOT_PASSWORD' ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  print_line " Verifying the MySQL server deployment:"
+
+  pad2 "Project '${this}' exists"
+  if oc project "${this}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  local app='mysqld'
+
+  pad2 "Deployment '${app}' exists in '${this}'"
+  if oc get deployment "${app}" -o name
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "MySQL server pod is ready and runnning"
+  if ocp4_check_pod_ready_and_running "${project}" "deployment=${app}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "MySQL server logs report it is ready to accept connections"
+  local pod=$(oc get pod -l "deployment=${app}" -o name)
+  if oc logs "${pod}" | grep -q 'mysqld: ready for connections'
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  print_line " Verifying the Apache HTTP Server YAML file:"
+
+  local yaml_file="httpd.yaml"
+  pad2 "File '~/${this}/${yaml_file}' exists"
+  if [ -r "/home/student/${this}/${yaml_file}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Ingress points to the wild card domain of the cluster"
+  local host=$(yq r -d2 "/home/student/${this}/${yaml_file}" 'spec.rules[0].host')
+  if [ "${host}" = "httpd.${RHT_OCP4_WILDCARD_DOMAIN}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Deployment points to the Red Hat container registry"
+  local image=$(yq r -d0 "/home/student/${this}/${yaml_file}" 'spec.template.spec.containers[0].image')
+  if [ "${image}" = 'registry.access.redhat.com/rhscl/httpd-24-rhel7:2.4' ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  print_line " Verifying the Apache HTTP Server deployment:"
+
+  local app='httpd'
+
+  pad2 "Deployment '${app}' exists in '${this}'"
+  if oc get deployment "${app}" -o name
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Route for '${app}' exists in '${this}'"
+  local route=$(oc get route -l "app=${app}" -o name)
+  if [ "${route}" != "" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Route for '${app}' points to the wildcard domain"
+  local host=$(oc get "${route}" -o jsonpath='{.spec.host}')
+  if [ "${host}" = "httpd.${RHT_OCP4_WILDCARD_DOMAIN}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Apache HTTP Server pod is ready and runnning"
+  if ocp4_check_pod_ready_and_running "${project}" "deployment=${app}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Apache HTTP Server pod returns the welcome page"
+  if curl --connect-timeout 9 -s "httpd.${RHT_OCP4_WILDCARD_DOMAIN}" | grep -q '<h1>Red Hat Enterprise Linux <strong>Test Page</strong></h1>'
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_grade_footer
+}
+
+
+function old_grade {
+  ### remove when done!!!
+
+  local pods_count=/home/student/${this}/completed-pods.txt
+  local pods_count_cmd=$(oc get pods -n ${this} --all-namespaces -o json --field-selector="status.phase==Succeeded" | jq  '.items[].metadata.name' | wc -l)
+
+  pad " · Checking number of pods"
+  if stat ${pods_count}; then
+    print_PASS
+
+    pad ' · Comparing pods number'
+    if [[ ${pods_count_cmd} -ge $(cat ${pods_count}) ]]; then
+      print_PASS
+    else
+      print_FAIL
+    fi
+  else
+    print_FAIL
+  fi
+
+  print_header ' Reviewing HTTPd file'
+  local httpd_file=/home/student/${this}/application-httpd-fixed.yaml
+  #XXX Looks like FL and RM have different yq binaries
+  #local httpd_deployment_image="$(yq -r '.spec.template.spec.containers[0].image' ${httpd_file} )"
+  local httpd_deployment_image="$(yq r ${httpd_file} 'spec.template.spec.containers[0].image')"
+  local httpd_deployment_req_image="${RHT_OCP4_PRIV_REGISTRY}/rhscl/httpd-24-rhel7:2.4-93"
+
+  echo "*** file:     '${httpd_deployment_image}'"
+  echo "*** expected: '${httpd_deployment_req_image}'"
+
+  pad ' · Ensuring template file exists'
+  if stat ${httpd_file}; then
+    print_PASS
+
+    pad ' · Checking image in resources file'
+    if [[ "${httpd_deployment_image}" == "${httpd_deployment_req_image}" ]]; then
+      print_PASS
+    else
+      print_FAIL
+    fi
+  else
+    print_FAIL
+  fi
+
+  print_header ' Reviewing HTTPd deployment'
+  local httpd_deployment='execute-review-httpd'
+  local httpd_deployment_image="$(oc get deployment ${httpd_deployment}  -n ${this} -o jsonpath='{.spec.template.spec.containers[*].image}')"
+  local httpd_deployment_req_image="${RHT_OCP4_PRIV_REGISTRY}/rhscl/httpd-24-rhel7:2.4-93"
+
+  pad ' · Ensuring image is set'
+  if [[ "${httpd_deployment_image}" == "${httpd_deployment_req_image}" ]]; then
+    print_PASS
+
+    pad ' · HTTPd application pod is running'
+    if oc get pods  -n ${this} | grep httpd.*Running; then
+      print_PASS
+    else
+      print_FAIL
+    fi
+  else
+    print_FAIL
+  fi
+
+  pad " · Checking HTTPd service"
+  local httpd_service='execute-review-httpd'
+  if oc describe svc/${httpd_service} -n ${this}| grep app=${httpd_service},deployment=${httpd_service}; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad " · Checking HTTPd route"
+  local httpd_route='execute-review-httpd'
+  if  oc get route ${httpd_route} -n ${this}; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad " · Accessing route "
+  local route='execute-review'
+  if curl http://${route}.${RHT_OCP4_WILDCARD_DOMAIN}| grep Apache; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+  ocp4_delete_project "${this}"
+  ocp4_cleanup_lab_files
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

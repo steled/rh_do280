@@ -1,0 +1,112 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-install-prepare - script for Guided Exercise: Prepare for Installation
+#
+# SYNOPSIS
+#     lab-install-prepare {setup|cleanup}
+#
+#        start   - prepare the system for starting the exercise
+#        finish  - perform post-exercise cleanup
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does setup,
+#      or cleanup for the particular exercise.
+#
+# CHANGELOG
+#   * Wed Thu 19 2019 Michael Jarrett <mjarrett@redhat.com>
+#   - updated start and finish function for ocp4.2 development
+#   * Thu Apr  11 2019 Fernando Lozano <flozano@redhat.com>
+#     - Refactored for the DO280-OCP4 shlib and conventions
+#   * Fri Apr  05 2019 Michael Phillips <miphilli@redhat.com>
+#     - Repurposed script for OCP 4.0
+#   * Thu Jul  14 2018 Dan Kolepp <dkolepp@redhat.com>
+#     - Added logic to support to re-use of ansible
+#       roles used for setup of OpenShift Unified Classroom.
+#     - Utilizing new function to cleanup ansible files.
+#   * Wed Jul  11 2018 Dan Kolepp <dkolepp@redhat.com>
+#     - setup verb now also copies the ansible.cfg file.
+#   * Thu Jun  13 2017 Ricardo Jun <jtaniguc@redhat.com>
+#     - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+
+# This defines which subcommands are supported (setup, grade, etc.).
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(start finish)
+
+# Initialize and set some variables
+run_as_root='true'
+target='workstation'
+this='install-prepare'
+title='Guided Exercise: Prepare for Installation'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+  ocp4_exit_on_failure
+  ocp4_print_setup_header
+  print_line " Preparing the student's workstation:"
+  ocp4_create_downloads_folder
+
+  local opi='/usr/local/bin/openshift-install'
+  if [ -x "${opi}" ]; then
+    pad2 "Delete the openshift-install binary"
+    if rm -f "${opi}"
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  local oc='/usr/local/bin/oc'
+  if [ -x "${oc}" ]; then
+    pad2 "Delete the oc client"
+    if rm -f "${oc}"
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  local kubectl='/usr/local/bin/kubectl'
+  if [ -x "${kubectl}" ]; then
+    pad2 "Delete the kubectl client"
+    if rm -f "${kubectl}"
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  ocp4_grab_lab_files 'no-solution'
+  ocp4_delete_all_idp
+  ocp4_print_setup_footer
+}
+
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+  ocp4_login_as_admin
+  ocp4_cleanup_lab_files 'no-solution'
+  ocp4_print_cleanup_footer
+}
+
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

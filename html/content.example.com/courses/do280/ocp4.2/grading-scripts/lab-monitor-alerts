@@ -1,0 +1,92 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-monitor-alerts - DO280-OCP4
+#                          Monitoring Cluster Events and Alerts
+#
+# SYNOPSIS
+#     lab-monitor-alerts {start|finish}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the Troubleshooting OpenShift Software-defined Networking activity
+#
+# CHANGELOG
+#   * Tue Dec 10 2019 Razique Mahroua <rmahroua@redhat.com>
+#   - original code
+
+PATH=/root/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# This defines which subcommands are supported (start, grade, etc.).
+# Usually GEs do not have a grade verb
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(start finish)
+
+# Change these variables to match your exercise
+this='monitor-alerts'
+title='Monitoring Cluster Events and Alerts'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+function lab_start {
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+  ocp4_fail_if_project_exists "${this}"
+
+  ocp4_exit_on_failure
+
+  ocp4_print_setup_header
+  ocp4_add_standard_users
+  ocp4_add_self_provisioing
+  print_line " Preparing the student's workstation:"
+  ocp4_install_oc
+  ocp4_grab_lab_files
+
+  pad ' · Adding cluster-monitoring-view role to developer user'
+  if oc adm policy add-cluster-role-to-user cluster-monitoring-view developer; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+  ocp4_print_setup_footer
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+  ocp4_login_as_admin
+
+  ocp4_delete_project "${this}"
+
+  ocp4_cleanup_lab_files
+
+  pad ' · Removing role from developer user'
+  local cluster_binding=$(oc get clusterrolebindings cluster-monitoring-view -o jsonpath='{.subjects[?(@.name == "developer")].name}')
+  if [[ "${cluster_binding}" == "developer " ]]; then
+    if oc adm policy remove-cluster-role-from-user cluster-monitoring-view developer; then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  else
+    print_SUCCESS
+  fi
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"
